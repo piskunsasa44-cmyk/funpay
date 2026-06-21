@@ -47,7 +47,12 @@ POLL_INTERVAL_SECONDS = int(os.getenv("POLL_INTERVAL_SECONDS", "120"))
 TELEGRAM_POLL_TIMEOUT = int(os.getenv("TELEGRAM_POLL_TIMEOUT", "10"))
 
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
-TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
+
+# Можно указать несколько ID через запятую: "111111,222222" — все получат
+# алерты, и команды (/scan, /top и т.д.) будут приниматься от любого из них.
+TELEGRAM_CHAT_IDS = [
+    chat_id.strip() for chat_id in os.environ["TELEGRAM_CHAT_ID"].split(",") if chat_id.strip()
+]
 
 FUNPAY_GOLDEN_KEY = os.environ.get("FUNPAY_GOLDEN_KEY", "")
 
@@ -193,15 +198,16 @@ def prices_look_sane(lots: list[Lot]) -> bool:
 
 def send_telegram_text(text: str) -> None:
     api_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    try:
-        resp = requests.post(
-            api_url,
-            json={"chat_id": TELEGRAM_CHAT_ID, "text": text, "disable_web_page_preview": True},
-            timeout=10,
-        )
-        resp.raise_for_status()
-    except requests.RequestException as exc:
-        log.error("Не удалось отправить сообщение в Telegram: %s", exc)
+    for chat_id in TELEGRAM_CHAT_IDS:
+        try:
+            resp = requests.post(
+                api_url,
+                json={"chat_id": chat_id, "text": text, "disable_web_page_preview": True},
+                timeout=10,
+            )
+            resp.raise_for_status()
+        except requests.RequestException as exc:
+            log.error("Не удалось отправить сообщение в Telegram (chat_id=%s): %s", chat_id, exc)
 
 
 def send_telegram_alert(lot: Lot) -> None:
@@ -312,7 +318,7 @@ def process_update(update: dict, runtime: dict, history: list[dict]) -> None:
         return
 
     chat_id = str(message.get("chat", {}).get("id", ""))
-    if chat_id != str(TELEGRAM_CHAT_ID):
+    if chat_id not in TELEGRAM_CHAT_IDS:
         log.warning("Команда от чужого chat_id=%s, игнорирую: %r", chat_id, message.get("text"))
         return
 
